@@ -2,7 +2,7 @@
 name = "typemarker"
 description = "Procedural macro for easily creating multiple linked marker types"
 
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
@@ -18,4 +18,4 @@ proc-macro = true
 
 [dependencies]
 proc-macro2 = "1.0.34"
-typemarker_core = { path = "../core", version = "0.1.0" }
+typemarker_core = { path = "../core", version = "0.1.1" }

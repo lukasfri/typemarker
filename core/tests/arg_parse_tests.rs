@@ -14,7 +14,7 @@ fn no_value_arg_parse() {
       no_value
     };
 
-    let result = Args::parse(input);
+    let result = Args::parse(input).unwrap();
 
     assert_eq!(expected, result);
 }
@@ -32,7 +32,7 @@ fn no_value_no_trait_arg_parse() {
       no_value, no_trait
     };
 
-    let result = Args::parse(input);
+    let result = Args::parse(input).unwrap();
 
     assert_eq!(expected, result);
 }

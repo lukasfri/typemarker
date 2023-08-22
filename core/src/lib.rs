@@ -4,8 +4,8 @@
 
 use darling::{export::NestedMeta, FromMeta};
 use proc_macro2::{Ident, TokenStream};
-use quote::quote;
-use syn::{parse2, ItemEnum};
+use quote::{quote, quote_spanned};
+use syn::{parse2, spanned::Spanned, ItemEnum};
 
 #[derive(Debug, Default, Eq, PartialEq, FromMeta)]
 pub struct Args {
@@ -17,25 +17,26 @@ pub struct Args {
 }
 
 impl Args {
-    pub fn parse(attr: TokenStream) -> Self {
-        let attr_args = match NestedMeta::parse_meta_list(attr) {
-            Ok(v) => v,
-            Err(e) => {
-                panic!("{}", e);
-            }
-        };
+    pub fn parse(attr: TokenStream) -> Result<Self, TokenStream> {
+        let attr_args = NestedMeta::parse_meta_list(attr).map_err(|e| quote_spanned! {
+            e.span() =>
+                compile_error!(format!("Meta from attribute could not be parsed: {}", e).as_str());
+        })?;
 
-        match Args::from_list(&attr_args) {
-            Ok(v) => v,
-            Err(e) => {
-                panic!("{}", e);
+        Args::from_list(&attr_args).map_err(|e| {
+            quote_spanned! {
+                e.span() =>
+                compile_error!("Args could not be parsed from meta: {}", e);
             }
-        }
+        })
     }
 }
 
 pub fn typemarker_macro(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let args = Args::parse(attr);
+    let args = match Args::parse(attr) {
+        Ok(val) => val,
+        Err(err) => return err,
+    };
 
     let ItemEnum {
         ident,
@@ -46,8 +47,11 @@ pub fn typemarker_macro(attr: TokenStream, item: TokenStream) -> TokenStream {
         .unwrap_or_else(|_| unimplemented!("Typestate can only be created using enums."));
     // // let bodys = parse2::<Item>(tokens)
 
-    if variants.iter().any(|variant| !variant.fields.is_empty()) {
-        panic!("All enum variants must be blank/have no fields.")
+    if let Some(variant) = variants.iter().find(|variant| !variant.fields.is_empty()) {
+        return quote_spanned! {
+            variant.fields.span() =>
+            compile_error!("All enum variants must be blank/have no fields.")
+        };
     }
 
     let variant_idents: Vec<_> = variants
