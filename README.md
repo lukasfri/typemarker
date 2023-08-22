@@ -1,3 +1,5 @@
+# Typemarker
+
 Procedural macro for easily creating multiple linked marker types, useful for the typestate pattern.
 
 # Examples
