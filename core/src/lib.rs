@@ -1,22 +1,41 @@
-use darling::FromMeta;
-use proc_macro2::TokenStream;
+//! Core module of typemarker that includes all the code for the macro and tests.
+//!
+//! For documentation on how to use typemarker, see the typemarker crate.
+
+use darling::{export::NestedMeta, FromMeta};
+use proc_macro2::{Ident, TokenStream};
 use quote::quote;
-use syn::{parse::Parser, parse2, Attribute, ItemEnum};
+use syn::{parse2, ItemEnum};
 
 #[derive(Debug, Default, Eq, PartialEq, FromMeta)]
-struct Args {
-    no_value: Option<()>,
-    no_trait: Option<()>,
+pub struct Args {
+    pub no_value: Option<()>,
+    pub value_name: Option<syn::Ident>,
+
+    pub no_trait: Option<()>,
+    pub trait_name: Option<syn::Ident>,
 }
 
-pub fn typestate_macro(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let attr = Attribute::parse_outer.parse2(attr).unwrap().pop().unwrap();
+impl Args {
+    pub fn parse(attr: TokenStream) -> Self {
+        let attr_args = match NestedMeta::parse_meta_list(attr) {
+            Ok(v) => v,
+            Err(e) => {
+                panic!("{}", e);
+            }
+        };
 
-    let args = match attr.meta {
-        syn::Meta::Path(_) => Args::default(),
-        syn::Meta::List(_) => Args::from_meta(&attr.meta).unwrap(),
-        syn::Meta::NameValue(_) => unimplemented!(),
-    };
+        match Args::from_list(&attr_args) {
+            Ok(v) => v,
+            Err(e) => {
+                panic!("{}", e);
+            }
+        }
+    }
+}
+
+pub fn typemarker_macro(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = Args::parse(attr);
 
     let ItemEnum {
         ident,
@@ -41,8 +60,16 @@ pub fn typestate_macro(attr: TokenStream, item: TokenStream) -> TokenStream {
         ident,
         vis,
         &variant_idents,
-        args.no_value.is_none(),
-        args.no_trait.is_none(),
+        if args.no_value.is_none() {
+            args.value_name.or(Ident::from_string("Dynamic").ok())
+        } else {
+            None
+        },
+        if args.no_trait.is_none() {
+            args.trait_name.or(Ident::from_string("Trait").ok())
+        } else {
+            None
+        },
     )
 }
 
@@ -50,16 +77,17 @@ pub fn generate_mod(
     ident: syn::Ident,
     vis: syn::Visibility,
     variant_idents: &[syn::Ident],
-    has_value: bool,
-    has_trait: bool,
+    value: Option<Ident>,
+    enum_trait: Option<Ident>,
 ) -> TokenStream {
     let base_enums = quote! {
       #( pub enum #variant_idents {} )*
     };
 
-    let value_tokens = if has_value {
+    let value_tokens = if let Some(value) = &value {
         quote! {
-          pub enum Dynamic {
+            #[derive(::core::cmp::Eq, ::core::cmp::PartialEq)]
+          pub enum #value {
             #(#variant_idents),*
 
           }
@@ -68,27 +96,27 @@ pub fn generate_mod(
         TokenStream::default()
     };
 
-    let trait_tokens = if has_trait {
-        let base_trait_tokens = if has_value {
+    let trait_tokens = if let Some(enum_trait) = enum_trait {
+        let base_trait_tokens = if let Some(value) = value {
             quote! {
-              pub trait Trait: sealed::Sealed {
-                fn dynamic() -> Dynamic;
+              pub trait #enum_trait: __sealed::Sealed {
+                fn dynamic() -> #value;
               }
-              #( impl Trait for #variant_idents {
-                fn dynamic() -> Dynamic {
-                    Dynamic::#variant_idents
+              #( impl #enum_trait for #variant_idents {
+                fn dynamic() -> #value {
+                    #value::#variant_idents
                 }
               } )*
             }
         } else {
             quote! {
-              pub trait Trait: sealed::Sealed {}
-              #( impl Trait for #variant_idents {} )*
+              pub trait #enum_trait: __sealed::Sealed {}
+              #( impl #enum_trait for #variant_idents {} )*
             }
         };
 
         let sealed_trait_tokens = quote! {
-            mod sealed {
+            mod __sealed {
                 pub trait Sealed {}
                 #( impl Sealed for super::#variant_idents {} )*
             }
@@ -103,6 +131,7 @@ pub fn generate_mod(
     };
 
     quote! {
+      #[allow(non_snake_case)]
       #vis mod #ident {
         #base_enums
 
